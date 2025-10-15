@@ -54,33 +54,122 @@ class DiceSet():
         # Initialize list of dice
         self.dice = np.empty(self.num_dice, dtype=object)
         for i in range(self.num_dice):
-            self.dice[i] = Dice(seed = (i + self.start_seed), num_sides= num_sides)
+            self.dice[i] = Dice(seed = (i + start_seed), num_sides= num_sides)
         self.current_values = np.zeros(self.num_dice)
+        self.scores = {
+            '1s': 0,
+            '2s': 0,
+            '3s': 0,
+            '4s': 0,
+            '5s': 0,
+            '6s': 0,
+            '3_of_a_kind': 0,
+            '4_of_a_kind': 0,
+            'full_house': 0,
+            'sm_straight': 0,
+            'lg_straight': 0,
+            'yahtzee': 0,
+            'chance': 0
+        }
 
     def score_dice(self):
         self.current_values = np.array([d.get_value() for d in self.dice])
+
+        # Check upper section (1s-6s)
+        for n in range(1, 7):
+            self.scores[f'{n}s'] = self.check_upper_section(n)
+
+        # Checks three and four of a kind
+        for n in [3, 4]:
+            self.scores[f'{n}_of_a_kind'] = self.check_three_and_four_of_a_kind(n)
+
+        # Check full house
+        self.scores['full_house'] = self.check_full_house()
+
+        # Check straight
+        self.scores['sm_straight'] = self.check_sm_straight()
+        self.scores['lg_straight'] = self.check_lg_straight()
+
+        # Check Yahtzee
+        self.scores['yahtzee'] = self.check_yahtzee()
+
+        # Check chance
+        self.scores['chance'] = self.check_chance()
 
     def check_upper_section(self, num: int):
         '''
         Checks how many dice are of given value and returns sum of resulting array
         '''
-        vals = np.where(self.current_values == num)
+        vals = self.current_values[self.current_values==num]
 
-        if vals:
-            return vals.sum()
+        if len(vals) > 0:
+            return int(vals.sum())
         else:
-            return
+            return 0
         
     def check_three_and_four_of_a_kind(self, num: int):
         max_occur= np.bincount(self.current_values).max()
         if max_occur >= num:
-            return self.current_values.sum()
+            return int(self.current_values.sum())
         else:
-            return
+            return 0
+        
+    def check_full_house(self):
+        counts = np.unique(np.bincount(self.current_values))
+        if len(counts) != 2:
+            return 0
+    
+        elif (np.array([2, 3]) == counts).all():
+            return 25
+        
+        else:
+            return 0
+        
+    def check_sm_straight(self):
+        potential_lower_sm_straight = np.arange(min(self.current_values), min(self.current_values) + 4)
+        potential_upper_sm_straight = np.arange(max(self.current_values) - 3, max(self.current_values) + 1)
+        if (np.isin(sorted(self.current_values), potential_lower_sm_straight)).all() or \
+            (np.isin(sorted(self.current_values), potential_upper_sm_straight)).all():
+            return 40
+        else:
+            return 0
+        
+    def check_lg_straight(self):
+        potential_lg_straight = np.arange(min(self.current_values), min(self.current_values) + 5)
+        if (sorted(self.current_values)==potential_lg_straight).all():
+            return 50
+        else:
+            return 0
 
-    def roll_dice():
-        pass 
+    def check_yahtzee(self):
+        if len(np.bincount(self.current_values)) == 1:
+            return 50
+        else:
+            return 0
+        
+    def check_chance(self):
+        return int(self.current_values.sum())
 
+    def roll_dice(self):
+        for d in self.dice:
+            d.roll()
+
+    def clear_scores(self):
+        self.scores = {
+            '1s': 0,
+            '2s': 0,
+            '3s': 0,
+            '4s': 0,
+            '5s': 0,
+            '6s': 0,
+            '3_of_a_kind': 0,
+            '4_of_a_kind': 0,
+            'full_house': 0,
+            'sm_straight': 0,
+            'lg_straight': 0,
+            'yahtzee': 0,
+            'chance': 0
+        }
 
 class Player():
     pass
@@ -91,7 +180,13 @@ class Game():
         self.player_2_name = player_2_name
 
 if __name__ == "__main__":
-    a = Dice(seed=15, num_sides = 6)
-    b = Dice(seed=15, num_sides = 6)
+    # a = Dice(seed=15, num_sides = 6)
+    # b = Dice(seed=15, num_sides = 6)
 
-    print(f'A: {a.roll()}, B: {b.roll()}')
+    # print(f'A: {a.roll()}, B: {b.roll()}')
+
+    ds = DiceSet(num_dice = 5, num_sides = 6, start_seed = 15)
+    ds.roll_dice()
+    ds.score_dice()
+    print(ds.current_values)
+    print(ds.scores)
