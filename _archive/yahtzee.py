@@ -3,30 +3,12 @@ import sys
 import random
 import math
 import time
-import FreeSimpleGUI as sg
 
-
-#-------------------------------------------------------------------------------#
-#  Works on Python 3                                                            #
-#  Uno card game using a GUI interface provided by PySimpleGUI                  #
-#  Based on this excellent text based version:                                  #
-#  http://code.activestate.com/recipes/580811-uno-text-based/                   #
-#  Contains all of the graphics inside the source file as base64 images         #
-#  Cards were obtained from Wikipedia                                           #
-#        https://en.wikipedia.org/wiki/Uno_(card_game)                          #
-#  Up to 4 players... any number can be computer controlled                     #
-#  Still needs some work but close enough for fun                               #
-#-------------------------------------------------------------------------------#
-
-yellow_color = '#FFAA00'
-blue_color = '#5555FF'
-red_color = '#FF5555'
-green_color = '#55AA55'
-
-import PySimpleGUI as sg
 import copy
 import random
 import numpy as np
+
+CATEGORIES = ['1s', '2s', '3s', '4s', '5s','6s', '3_of_a_kind', '4_of_a_kind', 'full_house', 'sm_straight', 'lg_straight', 'yahtzee', 'chance']
 
 class Dice():
     def __init__(self, seed=None, num_sides: int = 6):
@@ -49,52 +31,39 @@ class Dice():
 
 class DiceSet():
     def __init__(self, num_dice: int = 5, num_sides: int = 6, start_seed: int = 15):
-        self.num_rolls_remaining = 3
         self.num_dice = num_dice
         # Initialize list of dice
         self.dice = np.empty(self.num_dice, dtype=object)
         for i in range(self.num_dice):
             self.dice[i] = Dice(seed = (i + start_seed), num_sides= num_sides)
         self.current_values = np.zeros(self.num_dice)
-        self.scores = {
-            '1s': 0,
-            '2s': 0,
-            '3s': 0,
-            '4s': 0,
-            '5s': 0,
-            '6s': 0,
-            '3_of_a_kind': 0,
-            '4_of_a_kind': 0,
-            'full_house': 0,
-            'sm_straight': 0,
-            'lg_straight': 0,
-            'yahtzee': 0,
-            'chance': 0
-        }
+        self.potential_scores = np.array()
 
     def score_dice(self):
         self.current_values = np.array([d.get_value() for d in self.dice])
+        self.potential_scores = np.array()
 
         # Check upper section (1s-6s)
         for n in range(1, 7):
-            self.scores[f'{n}s'] = self.check_upper_section(n)
+            self.potential_scores.append(self.check_upper_section(n))
 
         # Checks three and four of a kind
         for n in [3, 4]:
-            self.scores[f'{n}_of_a_kind'] = self.check_three_and_four_of_a_kind(n)
+            self.potential_scores.append(self.check_three_and_four_of_a_kind(n))
 
         # Check full house
-        self.scores['full_house'] = self.check_full_house()
+        self.potential_scores.append(self.check_full_house())
 
         # Check straight
-        self.scores['sm_straight'] = self.check_sm_straight()
-        self.scores['lg_straight'] = self.check_lg_straight()
+        self.potential_scores.append(self.check_sm_straight())
+        self.potential_scores.append(self.check_lg_straight())
 
         # Check Yahtzee
-        self.scores['yahtzee'] = self.check_yahtzee()
+        self.potential_scores.append(self.check_yahtzee())
 
         # Check chance
-        self.scores['chance'] = self.check_chance()
+        self.potential_scores.append(self.check_chance())
+        return self.potential_scores
 
     def check_upper_section(self, num: int):
         '''
@@ -152,32 +121,79 @@ class DiceSet():
 
     def roll_dice(self):
         for d in self.dice:
-            d.roll()
+            # Only roll if user has not opted to keep the dice
+            if d.is_kept == False:
+                d.roll()
 
-    def clear_scores(self):
-        self.scores = {
-            '1s': 0,
-            '2s': 0,
-            '3s': 0,
-            '4s': 0,
-            '5s': 0,
-            '6s': 0,
-            '3_of_a_kind': 0,
-            '4_of_a_kind': 0,
-            'full_house': 0,
-            'sm_straight': 0,
-            'lg_straight': 0,
-            'yahtzee': 0,
-            'chance': 0
-        }
+    def print_dice(self):
+        for i, d in enumerate(self.dice):
+            print(f'Die #{i+1}: {d.value}\n')
+
+    def clear(self):
+        """
+        When turn is over, set all dice to not keep
+        """
+        for d in self.dice:
+            d.is_kept = False
 
 class Player():
-    pass
+    def __init__(self, name: str = 'Katie'):
+        self.num_rolls_remaining = 3
+        self.name = name
+        self.player_scores = np.zeros(len(CATEGORIES))
+        self.available_categories =  np.ones(len(CATEGORIES))
+
+    def keep_dice(self, dice_set: DiceSet, keep_indices: list=[]):
+        """
+        "Keep" dice, determined by input list of indices
+        """
+        for i, d in enumerate(dice_set):
+            if i in keep_indices:
+                d.dice[i].keep(True)
+            else:
+                d.dice[i].keep(False)
+
+    def update_score(self, score_type: str = 'chance', score_value: int = 0):
+        score_index = CATEGORIES.index(score_type)
+        self.player_scores[score_index] = score_value
+        self.available_categories[score_index] = 0
+    
 
 class Game():
-    def __init__(self, player_1_name: str = 'Katie', player_2_name: str = 'Jenny'):
-        self.player_1_name = player_1_name
-        self.player_2_name = player_2_name
+    def __init__(self, name: str = 'Katie'):
+        self.player = Player(name)
+        self.dice_set = DiceSet()
+        self.rounds_remaining = 13
+        self.end_round = False
+        self.round_score = 0
+
+    def start_game(self):
+        print('Starting game')
+
+    def take_turn(self):
+        """
+        1. Roll dice
+        2. Ask if they want to end the game
+        3. Otherwise, ask which dice to keep and then reroll
+        """
+        self.player.num_rolls_remaining = self.player.num_rolls_remaining - 1
+        self.dice_set.roll_dice()
+        self.dice_set.print_dice()
+        potential_scores = self.dice_set.score_dice()
+    
+    def process
+
+        if self.player.num_rolls_remaining != 0:
+
+        else:
+            self.end_round = True
+
+        if self.end_round == 0:
+            print("Which category would you like to apply the score to?")
+            print(potential_scores.keys())
+            self.dice_set.clear()
+            self.player.update_score(score_type = '1s', score_value = 0)
+
 
 if __name__ == "__main__":
     # a = Dice(seed=15, num_sides = 6)
