@@ -7,8 +7,7 @@ import time
 import copy
 import random
 import numpy as np
-
-CATEGORIES = ['1s', '2s', '3s', '4s', '5s','6s', '3_of_a_kind', '4_of_a_kind', 'full_house', 'sm_straight', 'lg_straight', 'yahtzee', 'chance']
+from constants import CATEGORIES
 
 class Dice():
     def __init__(self, seed=None, num_sides: int = 6):
@@ -51,6 +50,11 @@ class Game():
         self.end_round = False
         self.num_yahtzees = 0
         self.upper_points_remaining = 63
+
+        # Keep track of scoring order for analysis
+        self.score_order = []
+        self.rolls_per_round = []
+        self.final_score = 0
 
     def score_dice(self, values, num_yahtzees):
         """
@@ -147,7 +151,7 @@ class Game():
 
     def check_yahtzee(self, values: np.array, num_yahtzees: int):
         """
-        Checks for Yahtzee (five of a kind) and returns 50 if found
+        Checks for Yahtzee (five of a kind) and returns 50 if found and 100 if the user already has one Yahtzee
         """
         if (np.bincount(values).max() == 5) & (num_yahtzees == 0):
             return 50
@@ -202,38 +206,86 @@ class Game():
             else:
                 d.keep(False)
 
-    def update_score(self, category: str = 'chance'):
-        # TODO: Update by index rather than by category name
+    def update_yahtzee_score(self, bonus_category, score_index):
+        '''
+        Deals with Yahtzee scoring
+        1. If category has already had a zero applied or user has already applied two yahtzees, raise error.
+        2. If user has not yet applied any Yahtzees, mark Yahtzee category as used and apply score. Update Yahtzee count if roll used was Yahtzee.
+        3. If user has 1 Yahtzee already, add 100 to score and update other chosen category's score
+        '''
+        if ((self.available_categories[score_index]==0) and (self.num_yahtzees == 0)) \
+            or (self.num_yahtzees >= 2):
+            raise ValueError(f"Category Yahtzee already used.")
+        elif (self.num_yahtzees == 0):
+            if (self.potential_scores[score_index] == 50):
+                self.num_yahtzees += 1
+            self.available_categories[score_index] = 0
+            self.player_scores[score_index] = self.potential_scores[score_index]
+        else:
+            self.num_yahtzees += 1
+            self.player_scores[score_index] += 100
+            self.available_categories[score_index] = 0
+
+            # Update bonus category
+            bonus_score_index = CATEGORIES.index(bonus_category)
+            if self.available_categories[bonus_score_index] == 0:
+                raise ValueError(f"Category '{bonus_category}' already used.")
+            self.player_scores[bonus_score_index] = self.potential_scores[bonus_score_index]
+            self.available_categories[bonus_score_index] = 0
+
+    def update_score(self, category: str ='chance', bonus_category=None):
         """ 
         Update score once user has selected dice to keep
         """
         score_index = CATEGORIES.index(category)
-        if (self.available_categories[score_index] == 0):
-            raise ValueError(f"Category '{category}' already used.")
-        # Check Yahtzee bonus: can apply bonus Yahtzee only if Yahtzee has been used for non-zero score
-        elif (self.available_categories[score_index] == 0) and ((self.player_scores[score_index]==0)
-                                                                or self.num_yahtzees == 2):
+        if category == 'yahtzee':
+            self.update_yahtzee_score(bonus_category, score_index)
+        
+        elif (self.available_categories[score_index] == 0):
             raise ValueError(f"Category '{category}' already used.")
         
-        self.player_scores[score_index] = self.potential_scores[score_index]
-        self.available_categories[score_index] = 0
+        else:
+            self.player_scores[score_index] = self.potential_scores[score_index]
+            self.available_categories[score_index] = 0
+
+        # Update order of bonuses for further analysis
+        if bonus_category != None:
+            self.score_order.append(category + ', ' + bonus_category)
+        else:
+            self.score_order.append(category)
+        self.rolls_per_round.append((3-self.num_rolls_remaining))
         self.update_upper_points_remaining()
+        self.update_final_score()
         self.end_round = True
 
     def update_upper_points_remaining(self):
         upper_scores = self.player_scores[:6].sum()
-        self.upper_points_remaining = 0 if upper_scores > 63 else upper_scores
+        self.upper_points_remaining = 0 if upper_scores > 63 else (63 - upper_scores)
+
+    def update_final_score(self):
+        '''
+        Add 35 to final score if upper section score exceeds 63
+        '''
+        self.final_score = self.player_scores.sum()
+        if self.upper_points_remaining <= 0:
+            self.final_score += 35
 
     def print_potential_scores(self):
         for c, s in zip(CATEGORIES, self.potential_scores):
             print(f'{c}: {s}')
 
     def is_turn_over(self):
+        """
+        Check if turn is over
+        """
         if self.num_rolls_remaining == 0:
             return True
         return False
 
     def is_game_over(self):
+        """
+        Checks if game is over
+        """
         if self.num_rounds_remaining == 0:
             return True
         return False
@@ -241,20 +293,17 @@ class Game():
     def get_game_state(self):
         return {
             'available_categories': self.available_categories,
-            'used_yahtzees': self.num_yahtzees,
+            'num_yahtzees': self.num_yahtzees,
             'upper_points_remaining': self.upper_points_remaining,
             'scores': self.player_scores,
             'potential_scores': self.potential_scores,
             'rounds_remaining': self.num_rounds_remaining,
             'rolls_remaining': self.num_rolls_remaining,
-            'dice_values': self.dice_current_values
+            'dice_values': self.dice_current_values,
+            'score_order': self.score_order,
+            'rolls_per_round': self.rolls_per_round,
+            'final_score': self.final_score
         }
-
-    def clone(self):
-        """
-        Clone for looping
-        """
-        return copy.deepcopy(self)
 
 
 if __name__ == "__main__":
