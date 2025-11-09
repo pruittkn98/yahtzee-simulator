@@ -33,8 +33,9 @@ def choose_dice_to_keep(game_state: dict, all_rolls, all_rolls_scores, prioritiz
         # Get all potential combinations of kept dice
         keep_combs = list(set(combinations(dice_values, i)))
 
-        # Get potential combination of rerolled dice
+        # Get potential permutations with replacement of rerolled dice
         reroll_combs = list(product(range(1,7),repeat=(5-i)))
+
         # Count how often each combination appears to get probability
         reroll_counts = Counter(tuple(sorted(t)) for t in reroll_combs)
 
@@ -139,7 +140,6 @@ def greedy_strategy(start_seed=15,
                     prioritize_upper_section=True,
                     tie_break_order=DEFAULT_TIE_BREAK_ORDER):
     g = Game(start_seed)
-    g.roll_dice()
 
     # Get indices of tie break order
     tie_break_order_idx = [CATEGORIES.index(v) for v in tie_break_order]
@@ -157,7 +157,7 @@ def greedy_strategy(start_seed=15,
             g.roll_dice()
             best_keep = choose_dice_to_keep(g.get_game_state(), all_rolls, all_rolls_scores, prioritize_upper_section)
             # End turn if best option is to keep all five dice
-            if len(best_keep) == 0:
+            if len(best_keep) == 5:
                 break
             g.keep_dice(best_keep)
 
