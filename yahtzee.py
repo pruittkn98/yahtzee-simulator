@@ -132,10 +132,11 @@ class Game():
         Checks for small straight and returns 30 if found
         """
         # Outline two potential small straights
-        potential_lower_sm_straight = np.arange(min(values), min(values) + 4)
-        potential_upper_sm_straight = np.arange(max(values) - 3, max(values) + 1)
-        if (np.isin(potential_lower_sm_straight, sorted(values))).all() or \
-            (np.isin(potential_upper_sm_straight, sorted(values))).all():
+        unique_vals = np.unique(values)
+        potential_lower_sm_straight = np.arange(min(unique_vals), min(unique_vals) + 4)
+        potential_upper_sm_straight = np.arange(max(unique_vals) - 3, max(unique_vals) + 1)
+        if (np.isin(potential_lower_sm_straight, sorted(unique_vals))).all() or \
+            (np.isin(potential_upper_sm_straight, sorted(unique_vals))).all():
             return 30
         else:
             return 0

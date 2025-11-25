@@ -31,7 +31,7 @@ class RandomStrategy():
 
         else:
             best_keep_mask = [self.rng.choice([0, 1]) for i in range(0, 5)]
-            return [i for i, v in enumerate(best_keep_mask)]
+            return [i for i, v in enumerate(best_keep_mask) if v == 1]
 
 
     def choose_category(self, game_state: dict):
@@ -89,16 +89,16 @@ class RandomStrategy():
             # Apply to the upper section if 1) The respective upper section caetgory is empty (e.g. 5s for 55555) or 2) the respective upper section category is filled but there are no other open lower section categories
             if (best_score == best_upper_score and best_score == 0) or (best_upper_score > 0):
                 best_score_idxs = [i for i, x in enumerate(game_state['potential_scores']) if x == best_upper_score and i in new_available_upper_categories]
-                best_score_idx = self.rng.choice(best_score_idxs, 1)
+                best_score_idx = self.rng.choice(best_score_idxs, 1)[0]
             
             # If not, apply to lower category according to tiebreak order
             else:
                 non_zero_score_idx = [i for i, v in enumerate(game_state['potential_scores']) if i in new_available_other_categories and v > 0]
                 if len(non_zero_score_idx) > 0:
-                    best_score_idx = self.rng.choice(non_zero_score_idx, 1)
+                    best_score_idx = self.rng.choice(non_zero_score_idx, 1)[0]
 
                 else:
-                    best_score_idx = self.rng.choice(new_available_categories, 1)
+                    best_score_idx = self.rng.choice(new_available_categories, 1)[0]
 
         return CATEGORIES[best_score_idx]
 
@@ -124,5 +124,5 @@ class RandomStrategy():
         return self.game.get_game_state()
 
 if __name__ == '__main__':
-    r = RandomStrategy(start_seed=16, rng_seed = 1, tiered_strategy=True)
+    r = RandomStrategy(start_seed=316066, rng_seed = 4294651229, tiered_strategy=True)
     print(r.run_strategy())
