@@ -1,5 +1,5 @@
-from yahtzee import Game
-from constants import CATEGORIES, DEFAULT_TIE_BREAK_ORDER
+from scripts.utils.yahtzee import Game
+from scripts.utils.constants import CATEGORIES, DEFAULT_TIE_BREAK_ORDER
 import numpy as np
 
 class RandomStrategy():

@@ -1,23 +1,25 @@
-from yahtzee import Game
-from strategy_utils import score_all_rolls, choose_bonus_category_strategic, break_tie_strategic
-from constants import CATEGORIES, DEFAULT_TIE_BREAK_ORDER, ALL_ROLLS
-from itertools import combinations_with_replacement, combinations, product
+from scripts.utils.yahtzee import Game
+from scripts.utils.strategy_utils import choose_bonus_category_strategic, break_tie_strategic
+from scripts.utils.constants import CATEGORIES, DEFAULT_TIE_BREAK_ORDER
 from collections import Counter
 import numpy as np
-import pandas as pd
-from tqdm import tqdm
 
 class RulesBasedStrategy():
     def __init__(self, start_seed=15, 
-                        prioritize_upper_section=True,
                         tie_break_order=DEFAULT_TIE_BREAK_ORDER):
         self.start_seed = start_seed
-        self.prioritize_upper_section = prioritize_upper_section
         self.tie_break_order = tie_break_order
         self.tie_break_order_idx = [CATEGORIES.index(v) for v in tie_break_order]
         self.game = Game(start_seed)
 
-    def choose_dice_to_keep(self, game_state: dict, all_rolls, all_rolls_scores, prioritize_upper_section=True):
+    def reset_game(self, start_seed=15, 
+                        tie_break_order=DEFAULT_TIE_BREAK_ORDER):
+        self.start_seed = start_seed
+        self.tie_break_order = tie_break_order
+        self.tie_break_order_idx = [CATEGORIES.index(v) for v in tie_break_order]
+        self.game = Game(start_seed)
+
+    def choose_dice_to_keep(self, game_state: dict, prioritize_upper_section=False, prioritize_yahtzee=False):
         """
         From Glenn (2007):
         1. Yahtzee if Y is unused or Yahtzee Joker is applicable
@@ -48,17 +50,30 @@ class RulesBasedStrategy():
 
         # 1. Yahtzee if Y is unused or Yahtzee Joker is applicable
         if potential_scores[CATEGORIES.index('yahtzee')] > 0:
-            return [range(0, 5)]
+            return list(range(0, 5))
+        
+        # Optional additional strategies: prioritize upper section or prioritize Yahtzee
+        # Defaults to standard behavior if either are fulfilled
+        if prioritize_upper_section:
+            upper_valid = self.check_upper_section(game_state)
+            if upper_valid == 0:
+                upper_keep_comb = self.choose_dice_to_keep_prioritize_upper(available_categories, dice_values)
+                return self.find_dice_index(upper_keep_comb, dice_values)
+            
+        if prioritize_yahtzee:
+            if game_state['num_yahtzees'] < 2:
+                yahtzee_comb = self.choose_dice_to_keep_prioritize_yahtzee(available_categories, dice_values)
+                return self.find_dice_index(yahtzee_comb, dice_values)
         
         # 2. Large Straight if LS or SS is unused
         if (potential_scores[CATEGORIES.index('lg_straight')] > 0) and (
             'lg_straight' in available_categories_names or 'sm_straight' in available_categories_names
         ):
-            return [range(0, 5)] 
+            return list(range(0, 5))
         
         # 3. Small straight if SS is unused or both LS and C are unused
         if (potential_scores[CATEGORIES.index('sm_straight')] > 0) and (
-            ('sm_straight' in available_categories_names) and
+            ('sm_straight' in available_categories_names) or
             ('lg_straight' in available_categories_names and 'chance' in available_categories_names)
         ):
             # Find the small straight
@@ -79,7 +94,7 @@ class RulesBasedStrategy():
             
         # 5. Any tripleton if one of 3K, 4K, FH, or C is unused
         if (max_occur >= 3) and \
-                ('3_of_a_kind' in available_categories_names or '4_of_a_kind' in available_categories_names or 'chance' in available_categories_names):
+                ('3_of_a_kind' in available_categories_names or '4_of_a_kind' in available_categories_names or 'full_house' in available_categories_names or 'chance' in available_categories_names):
             return self.find_dice_index([value_max_occur[0]]*max_occur, dice_values) 
         
         # 6. A doubleton (high preferred) if the corresponding upper category is unused
@@ -107,10 +122,10 @@ class RulesBasedStrategy():
             return self.find_dice_index([triples[0]]*3, dice_values)
         
         # 10. A singleton (low preferred) if the corresponding upper category is unused, unless more than four upper categories are unused 
-        available_singles = sorted([v[0] for v in counts.most_common() if (v-1) in available_categories])
-        num_upper_used = len(available_categories[available_categories <= 5])
+        available_singles = sorted([v[0] for v in counts.most_common() if (v[0]-1) in available_categories])
+        num_upper_unused = len([v for v in available_categories if v <= 5])
 
-        if num_upper_used <= 4 and len(available_singles) > 0:
+        if num_upper_unused <= 4 and len(available_singles) > 0:
             return self.find_dice_index([available_singles[0]]*1, dice_values)
 
         # 11. Any doubleton (high preferred)
@@ -118,7 +133,7 @@ class RulesBasedStrategy():
            return self.find_dice_index([doubles[0]]*2, dice_values)
         
         # 12. A singleton 4, 5, or 6 (high preferred) if 3K, 4K, or C unused
-        singles = sorted([v[0] for v in counts.most_common() if v >= 4], reverse=True)
+        singles = sorted([v[0] for v in counts.most_common() if v[0] >= 4], reverse=True)
         if len(singles) > 0 and (('3_of_a_kind' in available_categories_names) or \
             ('4_of_a_kind' in available_categories_names) or ('chance' in available_categories_names)):
             return self.find_dice_index([singles[0]]*1, dice_values)
@@ -126,7 +141,92 @@ class RulesBasedStrategy():
         # 13. Nothing
         return []
     
+    def check_upper_section(self, game_state:dict, currently_scoring=False):
+        """
+        Checks if
+        1. Returns 1 if upper section bonus has been earned
+        2. Returns 0 if upper section bonus has not been earned but is attainable
+        3. Returns -1 if upper section bonus has not been earned and is not attainable
+        """
+        upper_points_remaining = game_state['upper_points_remaining']
+        potential_scores = game_state['potential_scores']
+        available_upper_categories = [i for i, x in enumerate(game_state['available_categories']) if x == 1 and i <= 5]
+        current_upper_score = np.sum(game_state['scores'][:6])
+
+        # Additional rules if currently scoring cateogry
+        # 1) Return -1 if only 1 upper category is still available and scoring in that category would not surpass threshold for bonus
+        # 2) Return -1 if all potential upper category scores are zero
+        if currently_scoring:
+            max_next_score = 0 if len(available_upper_categories) == 0 else max([v for i, v in enumerate(potential_scores) if i in available_upper_categories])
+            if (((current_upper_score + max_next_score) < 63) and len(available_upper_categories) == 1) or \
+                max_next_score == 0:
+                return -1
+            
+        # Assume 5 of a kind always applied to Yahtzee
+        potential_add_upper_score = sum([(i+1) * 4 for i in available_upper_categories])
+
+        if upper_points_remaining == 0:
+            return 1
+        
+        elif (current_upper_score + potential_add_upper_score) < 63:
+            return -1
+        
+        else:
+            return 0
+    
+    def choose_dice_to_keep_prioritize_upper(self, available_categories: list, dice_values: list):
+        """
+        Prioritizes upper section bonus. If earned, default to standard behavior.
+        """
+        # Filter to dice values that match remaining categories
+        valid_dice = [d for d in dice_values if (d-1) in available_categories]
+
+        # Reroll all
+        if len(valid_dice) == 0:
+            return []
+        
+        # Choose highest current score among remaining dice (break tie with lower value)
+        c = Counter(valid_dice)
+        best_count = -1
+        best_score = -1
+        best_i = -1
+        for i in sorted(c.keys()):
+            score = c[i] * i
+            if score > best_score:
+                best_count = c[i]
+                best_score = score
+                best_i = i
+
+        return [best_i] * best_count
+
+    def choose_dice_to_keep_prioritize_yahtzee(self, available_categories: list, dice_values: list):
+        """
+        Prioritizes getting a Yahtzee. If both Yahtzees are earned, default to standard behavior.
+        Keep the number with the highest number of dice. If there's a tie, prioritize upper section availability, and then rank lowest to highest
+        """
+        # Count number of dice by value
+        c = Counter(dice_values)
+
+        best_count = max(c.values())
+        best_i = [k for k, v in c.items() if v == best_count]
+
+        if len(best_i) == 1:
+            return [best_i[0]] * best_count
+        
+        # Prioritize upper section
+        best_i_upper = [i for i in best_i if (i-1) in available_categories]
+        if len(best_i_upper) == 0 and len(best_i):
+            return [sorted(best_i, reverse=False)[0]] * best_count
+        
+        if len(best_i_upper) == 1:
+            return [best_i_upper[0]] * best_count
+        
+        return [sorted(best_i_upper, reverse=False)[0]] * best_count
+    
     def find_dice_index(self, best_keep_comb, dice_values):
+        """
+        Finds indices of dice based on current values
+        """
         dice_values_copy = list(dice_values).copy()
         best_keep = []
         for v in best_keep_comb:
@@ -137,7 +237,7 @@ class RulesBasedStrategy():
         return best_keep
 
 
-    def choose_category(self, game_state: dict, prioritize_upper_section=True, tie_break_order_idx=DEFAULT_TIE_BREAK_ORDER):
+    def choose_category(self, game_state: dict, tie_break_order_idx=DEFAULT_TIE_BREAK_ORDER, prioritize_upper_section=False):
         # 1. Yahtzee
         # 2. Large Straight
         # 3. Small Straight
@@ -167,38 +267,46 @@ class RulesBasedStrategy():
         # 1b. Yahtzee, if available
         if potential_scores[CATEGORIES.index('yahtzee')] > 0 and 'yahtzee' in available_categories_names:
             return 'yahtzee', None, False, False
-
-        # 2. Small straight
-        if potential_scores[CATEGORIES.index('sm_straight')] > 0 and 'sm_straight' in available_categories_names:
-            return 'sm_straight', None, False, False
-
-        # 3. Large straight
+        
+        # Optional additional strategy: prioritize finishing upper section
+        # Yahtzee is already default behavior
+        if prioritize_upper_section:
+            upper_valid = self.check_upper_section(game_state, currently_scoring=True)
+            if upper_valid == 0:
+                upper_category_idx, upper_has_tie = self.choose_category_upper(game_state, tie_break_order_idx)
+                return CATEGORIES[upper_category_idx], None, upper_has_tie, False
+        
+        # 2. Large straight
         if potential_scores[CATEGORIES.index('lg_straight')] > 0 and 'lg_straight' in available_categories_names:
             return 'lg_straight', None, False, False
 
+        # 3. Small straight
+        if potential_scores[CATEGORIES.index('sm_straight')] > 0 and 'sm_straight' in available_categories_names:
+            return 'sm_straight', None, False, False
+
         # 4. A tripleton in an upper category if it earns the bonus
-        triple_idxs = [i for i, v in enumerate(potential_scores) if i in available_categories and v/3 >= (i+1)]
+        triple_idxs = [i for i, v in enumerate(potential_scores) if i in available_categories and v/3 == (i+1)]
         if len(triple_idxs) > 0 and upper_points_remaining > 0:
             if potential_scores[triple_idxs[0]] >= upper_points_remaining:
                 return CATEGORIES[triple_idxs[0]], None, False, False
 
         # 5. Four 5’s or four 6’s in the upper category
-        if potential_scores[CATEGORIES.index('5s')] == 20:
+        if potential_scores[CATEGORIES.index('5s')] == 20 and '5s' in available_categories_names:
             return '5s', None, False, False
 
-        if potential_scores[CATEGORIES.index('6s')] == 24:
+        if potential_scores[CATEGORIES.index('6s')] == 24 and '6s' in available_categories_names:
             return '6s', None, False, False
 
         # 6. Four of a kind but not in first round
-        if (game_state['num_rounds_remaining'] < 13) and ('4_of_a_kind' in available_categories_names) and \
+        if (game_state['rounds_remaining'] < 13) and ('4_of_a_kind' in available_categories_names) and \
             (potential_scores[CATEGORIES.index('4_of_a_kind')] > 0):
             return '4_of_a_kind', None, False, False
 
         # 7. Three 5’s or three 6’s in the upper category
-        if potential_scores[CATEGORIES.index('5s')] == 15:
+        if potential_scores[CATEGORIES.index('5s')] == 15 and '5s' in available_categories_names:
             return '5s', None, False, False
 
-        if potential_scores[CATEGORIES.index('6s')] == 18:
+        if potential_scores[CATEGORIES.index('6s')] == 18 and '6s' in available_categories_names:
             return '6s', None, False, False
 
         # 8. Full House
@@ -228,51 +336,70 @@ class RulesBasedStrategy():
             return CATEGORIES[double_idxs[0]], None, False, False
             
         # 14. Highest score if any category is non-zero
-        best_score = max(potential_scores)
-        best_score_idxs = [i for i, v in enumerate(potential_scores) if i in available_categories and v == best_score][0]
+        best_score = max(potential_scores[available_categories])
+        best_score_idxs = [i for i, v in enumerate(potential_scores) if i in available_categories and v == best_score]
         if best_score > 0:
-            return self.break_tie(best_score_idxs, tie_break_order_idx, is_zero=False), False, False
+            best_category_idx, has_tie = break_tie_strategic(best_score_idxs, tie_break_order_idx, is_zero=False)
+            return CATEGORIES[best_category_idx], None, has_tie, False
 
         # 15. Tie-break forfeited zero
-        return self.break_tie(best_score_idxs, tie_break_order_idx, is_zero=False), False, False
-
-    def break_tie(self, best_score_idxs: list, tie_break_order_idx: list, is_zero: bool = True):
-        # Breaks ties, based on specified tie break order
-        if len(best_score_idxs) == 1:
-            return best_score_idxs[0], False
+        best_category_idx, has_tie = break_tie_strategic(best_score_idxs, tie_break_order_idx, is_zero=True)
+        return CATEGORIES[best_category_idx], None, has_tie, False
+    
+    def choose_category_upper(self, game_state: dict, tie_break_order_idx=DEFAULT_TIE_BREAK_ORDER):
+        """
+        Chooses category, prioritizing completing largest contribution toward upper section bonus.
+        """
+        potential_scores = game_state['potential_scores']
+        available_upper_categories = [i for i, x in enumerate(game_state['available_categories']) if x == 1 and i <= 5]
+        best_upper_score = np.max([v for i, v in enumerate(potential_scores[:6]) if i in available_upper_categories])
+            
+        best_score_idxs = [i for i, v in enumerate(potential_scores[:6]) if v == best_upper_score and i in available_upper_categories]
         
-        score_idxs = [(i, tie_break_order_idx.index(i)) for i in best_score_idxs]
+        best_category_idx, has_tie = break_tie_strategic(best_score_idxs, tie_break_order_idx, is_zero=False)
+        return best_category_idx, has_tie
 
-        # Reverse priority order if score is zero
-        if is_zero:
-            score_idxs = sorted(score_idxs, key=lambda x: x[1], reverse=True)
-        else:
-            score_idxs = sorted(score_idxs, key=lambda x: x[1], reverse=False)
+    def run_strategy(self, start_seed=15, tie_break_order=DEFAULT_TIE_BREAK_ORDER, prioritize_upper_section=False, prioritize_yahtzee=False, quiet=True):
+        self.reset_game(start_seed=start_seed, tie_break_order=tie_break_order)
 
-        return score_idxs[0][0], True
-
-    def run_strategy(self):
         # Get score for all potential rolls
-        all_rolls, all_rolls_scores = score_all_rolls(self.game)
-
         while self.game.is_game_over() == False:
+            if not quiet:
+                print(f'Turn #{14 - self.game.get_game_state()['rounds_remaining']}')
+                print('   ----- Rolling -----')
             while self.game.is_turn_over() == False:
+                if not quiet:
+                    print(f'   Roll #{4 - self.game.get_game_state()['rolls_remaining']}')
                 self.game.roll_dice()
+                if not quiet:
+                    print(f'      Dice values: {self.game.get_game_state()['dice_values']}')
                 if self.game.is_turn_over() == True:
                     break
-                best_keep = self.choose_dice_to_keep(self.game.get_game_state(), all_rolls, all_rolls_scores, self.prioritize_upper_section)
+                best_keep = self.choose_dice_to_keep(self.game.get_game_state(), prioritize_upper_section, prioritize_yahtzee)
                 # End turn if best option is to keep all five dice
                 if len(best_keep) == 5:
                     break
                 self.game.keep_dice(best_keep)
+                if not quiet:
+                    print(f'      Kept values: {[int(v) for i, v in enumerate(g.game.get_game_state()['dice_values']) if i in best_keep]}')
 
+            if not quiet:
+                print('   ----- Scoring -----')
+                print(f'   Final dice values: {self.game.get_game_state()['dice_values']}')
             # Pick a category when turn is over
-            best_category, best_bonus_category, has_tie, has_bonus_tie = self.choose_category(self.game.get_game_state(), self.prioritize_upper_section, self.tie_break_order_idx)
+            best_category, best_bonus_category, has_tie, has_bonus_tie = self.choose_category(self.game.get_game_state(), self.tie_break_order_idx, prioritize_upper_section)
             self.game.update_score(category=best_category, bonus_category=best_bonus_category, has_tie=has_tie, has_bonus_tie=has_bonus_tie)
+            if not quiet:
+                print(f'   Category selected: {best_category}')
+                print(f'   Bonus category selected: {best_bonus_category}')
+                print(f'   Current scores = {self.game.get_game_state()['scores']}')
+                print(f'   Upper points remaining = {int(self.game.get_game_state()['upper_points_remaining'])}')
+                print(f'   Total score = {int(self.game.get_game_state()['final_score'])}')
+                print('-------------------------------------------------------')
             self.game.clear()
         
         return self.game.get_game_state()
 
 if __name__ == '__main__':
-    g = RulesBasedStrategy(start_seed=3871)
-    print(g.run_strategy())
+    g = RulesBasedStrategy(start_seed=361)
+    print(g.run_strategy(361, prioritize_upper_section=False, prioritize_yahtzee=False, quiet=False))

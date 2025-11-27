@@ -1,22 +1,10 @@
-from yahtzee import Game
-from constants import CATEGORIES, DEFAULT_TIE_BREAK_ORDER, ALL_ROLLS
+from scripts.utils.yahtzee import Game
+from scripts.utils.constants import CATEGORIES, DEFAULT_TIE_BREAK_ORDER, ALL_ROLLS
 from itertools import combinations_with_replacement, combinations, product
 from collections import Counter
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-
-
-def score_all_rolls(g: Game):
-    rows = []
-    for r in ALL_ROLLS:
-        scores = g.score_dice(np.array(r), 0)
-        rows.append(scores)
-    
-    all_rolls = {tuple(sorted(roll)): i for i, roll in enumerate(ALL_ROLLS)}
-    all_rolls_scores = np.vstack(rows)
-
-    return all_rolls, all_rolls_scores
 
 def break_tie_strategic(best_score_idxs: list, tie_break_order_idx: list, is_zero: bool = True):
     # Breaks ties, based on specified tie break order
@@ -88,7 +76,7 @@ def choose_bonus_category_strategic(game_state: dict, category: str, best_score_
                 'chance': {'score': game_state['potential_scores'][-1:], 'index': CATEGORIES.index('chance')}
             }
             new_scores = {v['index']: v['score'] for k, v in new_score_dict.items() if k in new_available_categories_names}
-            best_other_score = max(new_scores.keys())
+            best_other_score = max(new_scores.values())
             best_score_idxs = [i for i, v in new_scores.items() if v == best_other_score]
             best_score_idx, has_tie = break_tie_strategic(best_score_idxs, tie_break_order_idx)
 

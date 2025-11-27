@@ -7,7 +7,7 @@ import time
 import copy
 import random
 import numpy as np
-from constants import CATEGORIES
+from scripts.utils.constants import CATEGORIES
 
 class Dice():
     def __init__(self, seed=None, num_sides: int = 6):
