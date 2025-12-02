@@ -7,7 +7,7 @@ import time
 import copy
 import random
 import numpy as np
-from constants import CATEGORIES
+from scripts.utils.constants import CATEGORIES
 
 class Dice():
     def __init__(self, seed=None, num_sides: int = 6):
@@ -54,6 +54,7 @@ class Game():
         # Keep track of scoring order for analysis
         self.score_order = []
         self.rolls_per_round = []
+        self.ties = []
         self.final_score = 0
 
     def score_dice(self, values, num_yahtzees):
@@ -131,10 +132,11 @@ class Game():
         Checks for small straight and returns 30 if found
         """
         # Outline two potential small straights
-        potential_lower_sm_straight = np.arange(min(values), min(values) + 4)
-        potential_upper_sm_straight = np.arange(max(values) - 3, max(values) + 1)
-        if (np.isin(potential_lower_sm_straight, sorted(values))).all() or \
-            (np.isin(potential_upper_sm_straight, sorted(values))).all():
+        unique_vals = np.unique(values)
+        potential_lower_sm_straight = np.arange(min(unique_vals), min(unique_vals) + 4)
+        potential_upper_sm_straight = np.arange(max(unique_vals) - 3, max(unique_vals) + 1)
+        if (np.isin(potential_lower_sm_straight, sorted(unique_vals))).all() or \
+            (np.isin(potential_upper_sm_straight, sorted(unique_vals))).all():
             return 30
         else:
             return 0
@@ -233,7 +235,7 @@ class Game():
             self.player_scores[bonus_score_index] = self.potential_scores[bonus_score_index]
             self.available_categories[bonus_score_index] = 0
 
-    def update_score(self, category: str ='chance', bonus_category=None):
+    def update_score(self, category: str ='chance', bonus_category=None, has_tie: bool = False, has_bonus_tie: bool = False):
         """ 
         Update score once user has selected dice to keep
         """
@@ -254,6 +256,7 @@ class Game():
         else:
             self.score_order.append(category)
         self.rolls_per_round.append((3-self.num_rolls_remaining))
+        self.ties.append([has_tie, has_bonus_tie])
         self.update_upper_points_remaining()
         self.update_final_score()
         self.end_round = True
@@ -302,6 +305,7 @@ class Game():
             'dice_values': self.dice_current_values,
             'score_order': self.score_order,
             'rolls_per_round': self.rolls_per_round,
+            'ties': self.ties,
             'final_score': self.final_score
         }
 
