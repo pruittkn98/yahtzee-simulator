@@ -146,7 +146,7 @@ class RulesBasedStrategy():
         Checks if
         1. Returns 1 if upper section bonus has been earned
         2. Returns 0 if upper section bonus has not been earned but is attainable
-        3. Returns -1 if upper section bonus has not been earned and is not attainable
+        3. Returns -1 if upper section bonus has not been earned and is not attainable, or if maximum upper score is < 22
         """
         upper_points_remaining = game_state['upper_points_remaining']
         potential_scores = game_state['potential_scores']
@@ -185,16 +185,17 @@ class RulesBasedStrategy():
         if len(valid_dice) == 0:
             return []
         
-        # Choose highest current score among remaining dice (break tie with lower value)
+        # Choose highest expected score (from next immediate roll) among remaining dice (break tie with lower value)
         c = Counter(valid_dice)
         best_count = -1
-        best_score = -1
+        best_exp_score = -1
         best_i = -1
         for i in sorted(c.keys()):
-            score = c[i] * i
-            if score > best_score:
+            # exp score = current score + expected number of dice of the same value on reroll
+            exp_score = c[i] * i + (5 - c[i]) * i * 1/6
+            if exp_score > best_exp_score:
                 best_count = c[i]
-                best_score = score
+                best_exp_score = exp_score
                 best_i = i
 
         return [best_i] * best_count
@@ -243,7 +244,7 @@ class RulesBasedStrategy():
         # 3. Small Straight
         # 4. A tripleton in an upper category if it earns the bonus
         # 5. four 5’s or four 6’s in the upper category
-        # 6. Four of a Kind but not in first round
+        # 6. Four of a Kind but not in first round (Kelly & Liese)
         # 7. Three 5’s or three 6’s in the upper category
         # 8. Full House
         # 9. Three of a Kind if the total is at least 22
@@ -362,44 +363,57 @@ class RulesBasedStrategy():
     def run_strategy(self, start_seed=15, tie_break_order=DEFAULT_TIE_BREAK_ORDER, prioritize_upper_section=False, prioritize_yahtzee=False, quiet=True):
         self.reset_game(start_seed=start_seed, tie_break_order=tie_break_order)
 
-        # Get score for all potential rolls
-        while self.game.is_game_over() == False:
+        # Iterate through rounds
+        for i in range(13):
             if not quiet:
-                print(f'Turn #{14 - self.game.get_game_state()['rounds_remaining']}')
+                print(f'Turn #{i + 1}')
                 print('   ----- Rolling -----')
-            while self.game.is_turn_over() == False:
+            
+            for roll_num in range(3):
                 if not quiet:
-                    print(f'   Roll #{4 - self.game.get_game_state()['rolls_remaining']}')
+                    print(f'   Roll #{roll_num + 1}')
+                
                 self.game.roll_dice()
+                
                 if not quiet:
                     print(f'      Dice values: {self.game.get_game_state()['dice_values']}')
-                if self.game.is_turn_over() == True:
-                    break
-                best_keep = self.choose_dice_to_keep(self.game.get_game_state(), prioritize_upper_section, prioritize_yahtzee)
-                # End turn if best option is to keep all five dice
-                if len(best_keep) == 5:
-                    break
-                self.game.keep_dice(best_keep)
-                if not quiet:
-                    print(f'      Kept values: {[int(v) for i, v in enumerate(g.game.get_game_state()['dice_values']) if i in best_keep]}')
+                
+                if roll_num < 2:
+                    game_state = self.game.get_game_state()
+                    best_keep = self.choose_dice_to_keep(game_state, prioritize_upper_section, prioritize_yahtzee)
+                    # End turn if best option is to keep all five dice
+                    if len(best_keep) == 5:
+                        break
+                    self.game.keep_dice(best_keep)
+                    
+                    if not quiet:
+                        print(f'      Kept values: {[int(v) for i, v in enumerate(game_state['dice_values']) if i in best_keep]}')
 
             if not quiet:
                 print('   ----- Scoring -----')
-                print(f'   Final dice values: {self.game.get_game_state()['dice_values']}')
+            
             # Pick a category when turn is over
-            best_category, best_bonus_category, has_tie, has_bonus_tie = self.choose_category(self.game.get_game_state(), self.tie_break_order_idx, prioritize_upper_section)
-            self.game.update_score(category=best_category, bonus_category=best_bonus_category, has_tie=has_tie, has_bonus_tie=has_bonus_tie)
+            game_state = self.game.get_game_state()
+            
             if not quiet:
+                print(f'   Final dice values: {game_state['dice_values']}')
+            
+            best_category, best_bonus_category, has_tie, has_bonus_tie = self.choose_category(game_state, prioritize_upper_section=prioritize_upper_section, tie_break_order_idx=self.tie_break_order_idx)
+            self.game.update_score(category=best_category, bonus_category=best_bonus_category, has_tie=has_tie, has_bonus_tie=has_bonus_tie)
+            
+            if not quiet:
+                final_state = self.game.get_game_state()
                 print(f'   Category selected: {best_category}')
                 print(f'   Bonus category selected: {best_bonus_category}')
-                print(f'   Current scores = {self.game.get_game_state()['scores']}')
-                print(f'   Upper points remaining = {int(self.game.get_game_state()['upper_points_remaining'])}')
-                print(f'   Total score = {int(self.game.get_game_state()['final_score'])}')
+                print(f'   Current scores = {final_state['scores']}')
+                print(f'   Upper points remaining = {int(final_state['upper_points_remaining'])}')
+                print(f'   Total score = {int(final_state['final_score'])}')
                 print('-------------------------------------------------------')
+            
             self.game.clear()
         
         return self.game.get_game_state()
 
 if __name__ == '__main__':
-    g = RulesBasedStrategy(start_seed=361)
-    print(g.run_strategy(361, prioritize_upper_section=False, prioritize_yahtzee=False, quiet=False))
+    g = RulesBasedStrategy(start_seed=6)
+    print(g.run_strategy(361, prioritize_upper_section=True, prioritize_yahtzee=False, quiet=False))

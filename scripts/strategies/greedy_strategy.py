@@ -150,29 +150,61 @@ class GreedyStrategy():
 
         return rerolls_freq
 
-    def run_strategy(self, start_seed=15, prioritize_upper_section=True, tie_break_order=DEFAULT_TIE_BREAK_ORDER):
+    def run_strategy(self, start_seed=15, prioritize_upper_section=True, tie_break_order=DEFAULT_TIE_BREAK_ORDER, quiet=True):
         # Reset game
         self.reset_game(start_seed=start_seed, prioritize_upper_section=prioritize_upper_section, tie_break_order=tie_break_order)
 
         # Iterate through rounds
-        while self.game.is_game_over() == False:
-            while self.game.is_turn_over() == False:
+        for i in range(13):
+            if not quiet:
+                print(f'Turn #{i + 1}')
+                print('   ----- Rolling -----')
+            
+            for roll_num in range(3):
+                if not quiet:
+                    print(f'   Roll #{roll_num + 1}')
+                
                 self.game.roll_dice()
-                if self.game.is_turn_over() == True:
-                    break
-                best_keep = self.choose_dice_to_keep(self.game.get_game_state(), self.prioritize_upper_section)
-                # End turn if best option is to keep all five dice
-                if len(best_keep) == 5:
-                    break
-                self.game.keep_dice(best_keep)
+                
+                if not quiet:
+                    print(f'      Dice values: {self.game.get_game_state()['dice_values']}')
+                
+                if roll_num < 2:
+                    game_state = self.game.get_game_state()
+                    best_keep = self.choose_dice_to_keep(game_state, self.prioritize_upper_section)
+                    # End turn if best option is to keep all five dice
+                    if len(best_keep) == 5:
+                        break
+                    self.game.keep_dice(best_keep)
+                    
+                    if not quiet:
+                        print(f'      Kept values: {[int(v) for i, v in enumerate(game_state['dice_values']) if i in best_keep]}')
 
+            if not quiet:
+                print('   ----- Scoring -----')
+            
             # Pick a category when turn is over
-            best_category, best_bonus_category, has_tie, has_bonus_tie = self.choose_category(self.game.get_game_state(), self.prioritize_upper_section, self.tie_break_order_idx)
+            game_state = self.game.get_game_state()
+            
+            if not quiet:
+                print(f'   Final dice values: {game_state['dice_values']}')
+            
+            best_category, best_bonus_category, has_tie, has_bonus_tie = self.choose_category(game_state, self.prioritize_upper_section, self.tie_break_order_idx)
             self.game.update_score(category=best_category, bonus_category=best_bonus_category, has_tie=has_tie, has_bonus_tie=has_bonus_tie)
+            
+            if not quiet:
+                final_state = self.game.get_game_state()
+                print(f'   Category selected: {best_category}')
+                print(f'   Bonus category selected: {best_bonus_category}')
+                print(f'   Current scores = {final_state['scores']}')
+                print(f'   Upper points remaining = {int(final_state['upper_points_remaining'])}')
+                print(f'   Total score = {int(final_state['final_score'])}')
+                print('-------------------------------------------------------')
+            
             self.game.clear()
         
         return self.game.get_game_state()
 
 if __name__ == '__main__':
     g = GreedyStrategy()
-    print(g.run_strategy(start_seed=3571))
+    print(g.run_strategy(start_seed=3571, quiet=False))

@@ -9,6 +9,12 @@ class RandomStrategy():
         self.rng = np.random.default_rng(seed=rng_seed)
         self.tiered_strategy = tiered_strategy
 
+    def reset_game(self, start_seed=15, rng_seed = 1, tiered_strategy = True):
+        self.start_seed = start_seed
+        self.game = Game(start_seed)
+        self.rng = np.random.default_rng(seed=rng_seed)
+        self.tiered_strategy = tiered_strategy
+
     def choose_dice_to_keep(self):
         """
         Choose number and combination of dice to keep at random
@@ -102,27 +108,61 @@ class RandomStrategy():
 
         return CATEGORIES[best_score_idx]
 
-    def run_strategy(self):
+    def run_strategy(self, start_seed=15, rng_seed=1, tiered_strategy=True, quiet=True):
+        # Reset game
+        self.reset_game(start_seed, rng_seed, tiered_strategy)
 
-        while self.game.is_game_over() == False:
-            while self.game.is_turn_over() == False:
-                self.game.roll_dice()
-                if self.game.is_turn_over() == True:
-                    break
+        # Iterate through rounds
+        for i in range(13):
+            if not quiet:
+                print(f'Turn #{i + 1}')
+                print('   ----- Rolling -----')
+            
+            for roll_num in range(3):
+                if not quiet:
+                    print(f'   Roll #{roll_num + 1}')
                 
-                best_keep = self.choose_dice_to_keep()
-                # End turn if best option is to keep all five dice
-                if len(best_keep) == 5:
-                    break
-                self.game.keep_dice(best_keep)
+                self.game.roll_dice()
+                
+                if not quiet:
+                    print(f'      Dice values: {self.game.get_game_state()['dice_values']}')
+                
+                if roll_num < 2:
+                    best_keep = self.choose_dice_to_keep()
+                    # End turn if best option is to keep all five dice
+                    if len(best_keep) == 5:
+                        break
+                    self.game.keep_dice(best_keep)
+                    
+                    if not quiet:
+                        game_state = self.game.get_game_state()
+                        print(f'      Kept values: {[int(v) for i, v in enumerate(game_state['dice_values']) if i in best_keep]}')
 
+            if not quiet:
+                print('   ----- Scoring -----')
+            
             # Pick a category when turn is over
-            best_category, best_bonus_category, has_tie, has_bonus_tie = self.choose_category(self.game.get_game_state())
+            game_state = self.game.get_game_state()
+            
+            if not quiet:
+                print(f'   Final dice values: {game_state['dice_values']}')
+            
+            best_category, best_bonus_category, has_tie, has_bonus_tie = self.choose_category(game_state)
             self.game.update_score(category=best_category, bonus_category=best_bonus_category, has_tie=has_tie, has_bonus_tie=has_bonus_tie)
+            
+            if not quiet:
+                final_state = self.game.get_game_state()
+                print(f'   Category selected: {best_category}')
+                print(f'   Bonus category selected: {best_bonus_category}')
+                print(f'   Current scores = {final_state['scores']}')
+                print(f'   Upper points remaining = {int(final_state['upper_points_remaining'])}')
+                print(f'   Total score = {int(final_state['final_score'])}')
+                print('-------------------------------------------------------')
+            
             self.game.clear()
         
         return self.game.get_game_state()
 
 if __name__ == '__main__':
     r = RandomStrategy(start_seed=316066, rng_seed = 4294651229, tiered_strategy=True)
-    print(r.run_strategy())
+    print(r.run_strategy(start_seed=316066, rng_seed = 4294651229, tiered_strategy=True, quiet=False))
