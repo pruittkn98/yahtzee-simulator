@@ -48,3 +48,7 @@ Once setup is complete, open `analysis.ipynb` and select `isye_6644` as the kern
 
 > **Note:** It will take about an hour to run the greedy simulations from scratch. You can skip generating the simulation results and uncomment
 >           the second cell in section 4 to read saved output from the `data` folder.
+
+## Results
+
+Results are discussed in yahtzee_report.pdf.
