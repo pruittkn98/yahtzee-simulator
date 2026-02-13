@@ -1,8 +1,3 @@
-# ISYE_6644
-ISYE 6644 (Simulation) Class for Georgia Tech Online Master's in Analytics, Fall 2025
-Yahtzee Simulation Project
-Katie Pruitt
-
 ## Instructions for environment setup
 
 1. Download conda for virtual environment management. See instructions here: https://www.anaconda.com/docs/getting-started/miniconda/install#quickstart-install-instructions
