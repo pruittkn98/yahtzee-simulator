@@ -4,12 +4,12 @@
 
 2. Open a terminal and type `bash`. Run the following command to create a virtual environment:
     ```bash
-    conda create -n "isye_6644" python=3.13.7 ipython
+    conda create -n "yahtzee" python=3.13.7 ipython
     ```
 
 3. Activate the virtual environment:
     ```bash
-    conda activate isye_6644
+    conda activate yahtzee
     ```
 
 4. Install poetry (used for package management):
@@ -39,12 +39,12 @@
 
 9. Register kernel for use in Jupyter:
     ```bash
-    python -m ipykernel install --user --name=isye_6644
+    python -m ipykernel install --user --name=yahtzee
     ```
 
 ## Running the Analysis
 
-Once setup is complete, open `analysis.ipynb` and select `isye_6644` as the kernel. Hit "Run All" to run simulations and generate all output used in the report. Tables are copied to clipboard and pasted into attached Excel spreadsheet, while figures are output in folder `figures`.
+Once setup is complete, open `analysis.ipynb` and select `yahtzee` as the kernel. Hit "Run All" to run simulations and generate all output used in the report. Tables are copied to clipboard and pasted into attached Excel spreadsheet, while figures are output in folder `figures`.
 
 > **Note:** It will take about an hour to run the greedy simulations from scratch. You can skip generating the simulation results and uncomment
 >           the second cell in section 4 to read saved output from the `data` folder.
